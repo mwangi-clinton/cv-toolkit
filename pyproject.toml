@@ -1,0 +1,44 @@
+[build-system]
+requires = ["poetry-core>=2.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[project]
+name = "computer-vision-toolkit"
+version = "0.1.0"
+description = "A collection of reusable computer-vision toolkits (Grad-CAM, etc.) installable from Git."
+authors = [
+    { name = "Clinton Mwangi" },
+]
+readme = "README.md"
+requires-python = ">=3.9"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "torch>=1.10.0",
+    "torchvision>=0.11.0",
+    "numpy>=1.21.0",
+    "opencv-python>=4.5.0",
+    "Pillow>=8.0.0",
+]
+
+[project.urls]
+Repository = "https://github.com/mwangi-clinton/computer-vision-toolkit"
+
+[tool.poetry]
+packages = [
+    { include = "gradcam" },
+]
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0"
+
+[tool.poetry.requires-plugins]
+poetry-plugin-export = ">=1.8"
