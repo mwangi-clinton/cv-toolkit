@@ -13,13 +13,30 @@ localization map highlighting the regions of the image that mattered for
 that decision.
 """
 
-from typing import Callable, List, Optional, Tuple, Union
+from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import cv2
 import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import nn
+
+
+def _set_relu_inplace(model: nn.Module, inplace: bool) -> Dict[int, bool]:
+    """Set ``inplace`` on every ReLU in ``model``.
+
+    Returns a mapping of module id -> original ``inplace`` value only for
+    modules that were actually changed. This lets multiple explainers share
+    the same model without fighting over the restoration order.
+    """
+    original: Dict[int, bool] = {}
+    for module in model.modules():
+        if isinstance(module, (nn.ReLU, nn.LeakyReLU)):
+            current = bool(module.inplace)
+            if current != inplace:
+                original[id(module)] = current
+                module.inplace = inplace
+    return original
 
 
 class GradCAM:
@@ -65,6 +82,10 @@ class GradCAM:
         # Storage for hooks
         self._activations: Optional[torch.Tensor] = None
         self._gradients: Optional[torch.Tensor] = None
+
+        # Backward hooks are incompatible with inplace ReLU activations, so
+        # disable inplace mode while this explainer is attached.
+        self._relu_inplace_original = _set_relu_inplace(model, inplace=False)
 
         # Register forward and backward hooks
         self._forward_handle = target_layer.register_forward_hook(self._save_activation)
@@ -170,9 +191,13 @@ class GradCAM:
         return self.forward(input_tensor, target_category)
 
     def remove_hooks(self) -> None:
-        """Remove the registered forward/backward hooks."""
+        """Remove the registered forward/backward hooks and restore ReLU inplace settings."""
         self._forward_handle.remove()
         self._backward_handle.remove()
+
+        for module in self.model.modules():
+            if isinstance(module, (nn.ReLU, nn.LeakyReLU)) and id(module) in self._relu_inplace_original:
+                module.inplace = self._relu_inplace_original[id(module)]
 
     @property
     def last_target_category(self) -> Optional[int]:

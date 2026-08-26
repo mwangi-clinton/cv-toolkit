@@ -13,6 +13,23 @@ import torch
 from torch import nn
 
 
+def _set_relu_inplace(model: nn.Module, inplace: bool) -> Dict[int, bool]:
+    """Set ``inplace`` on every ReLU in ``model``.
+
+    Returns a mapping of module id -> original ``inplace`` value only for
+    modules that were actually changed. This lets multiple explainers share
+    the same model without fighting over the restoration order.
+    """
+    original: Dict[int, bool] = {}
+    for module in model.modules():
+        if isinstance(module, (nn.ReLU, nn.LeakyReLU)):
+            current = bool(module.inplace)
+            if current != inplace:
+                original[id(module)] = current
+                module.inplace = inplace
+    return original
+
+
 class GuidedBackprop:
     """Compute Guided Backpropagation saliency maps.
 
@@ -37,8 +54,15 @@ class GuidedBackprop:
         self._forward_handles: List[torch.utils.hooks.RemovableHandle] = []
         self._backward_handles: List[torch.utils.hooks.RemovableHandle] = []
 
-        # Storage for forward activations per ReLU module
-        self._activations: Dict[int, torch.Tensor] = {}
+        # Storage for forward activations per ReLU module. A stack is used
+        # because some architectures (e.g. ResNet Bottlenecks) call the same
+        # ReLU module multiple times per forward pass; backward runs in the
+        # reverse order, so popping the last activation gives the matching one.
+        self._activations: Dict[int, List[torch.Tensor]] = {}
+
+        # Backward hooks are incompatible with inplace ReLU activations, so
+        # disable inplace mode while this explainer is attached.
+        self._relu_inplace_original = _set_relu_inplace(model, inplace=False)
 
         self._register_hooks()
         self.model.eval()
@@ -53,8 +77,8 @@ class GuidedBackprop:
                 self._backward_handles.append(backward_handle)
 
     def _save_activation(self, module: nn.Module, input: torch.Tensor, output: torch.Tensor) -> None:
-        """Forward hook: store the output of each ReLU."""
-        self._activations[id(module)] = output.detach()
+        """Forward hook: push the output of each ReLU onto its activation stack."""
+        self._activations.setdefault(id(module), []).append(output.detach())
 
     def _guided_relu_backward(
         self,
@@ -63,16 +87,22 @@ class GuidedBackprop:
         grad_output: Tuple[torch.Tensor, ...],
     ) -> Tuple[torch.Tensor, ...]:
         """Backward hook: zero gradients unless activation and grad are positive."""
-        activation = self._activations.get(id(module))
+        activation_stack = self._activations.get(id(module))
         grad = grad_output[0]
 
-        if activation is None:
+        if not activation_stack:
             return grad_input
 
-        # Guided Backpropagation: grad > 0 AND activation > 0
+        # Pop the matching forward activation (backward runs in reverse order).
+        activation = activation_stack.pop()
+
+        # Guided Backpropagation: keep gradient only where both the
+        # incoming gradient and the forward ReLU activation are positive.
+        # For ReLU, activation is always >= 0, so we must use `<= 0` here
+        # (not `< 0`) to actually mask out the zero-activation positions.
         guided_grad = grad.clone()
         guided_grad[guided_grad < 0] = 0
-        guided_grad[activation < 0] = 0
+        guided_grad[activation <= 0] = 0
 
         return (guided_grad,)
 
@@ -97,6 +127,10 @@ class GuidedBackprop:
         """
         if input_tensor.dim() != 4 or input_tensor.shape[0] != 1:
             raise ValueError("GuidedBackprop.forward expects a batch of size 1 with shape (1, C, H, W)")
+
+        # Reset any stale activation stacks from a previous incomplete run.
+        for stack in self._activations.values():
+            stack.clear()
 
         input_tensor = input_tensor.clone().requires_grad_(True)
         if self.use_cuda:
@@ -126,13 +160,17 @@ class GuidedBackprop:
         return self.forward(input_tensor, target_category)
 
     def remove_hooks(self) -> None:
-        """Remove all registered hooks."""
+        """Remove all registered hooks and restore ReLU inplace settings."""
         for handle in self._forward_handles:
             handle.remove()
         for handle in self._backward_handles:
             handle.remove()
         self._forward_handles.clear()
         self._backward_handles.clear()
+
+        for module in self.model.modules():
+            if isinstance(module, (nn.ReLU, nn.LeakyReLU)) and id(module) in self._relu_inplace_original:
+                module.inplace = self._relu_inplace_original[id(module)]
 
     @property
     def last_target_category(self) -> Optional[int]:
