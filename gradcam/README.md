@@ -194,6 +194,7 @@ overlay = visualize_gradcam(input_tensor, heatmap)
 ```python
 import numpy as np
 import cv2
+import torchvision.models as models
 import torch
 from gradcam import GradCAM, GuidedBackprop, preprocess_image
 
