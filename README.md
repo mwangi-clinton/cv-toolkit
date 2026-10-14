@@ -39,5 +39,6 @@ poetry install
 | `gradcam` | `from gradcam import GradCAM, GuidedBackprop` | Grad-CAM / Guided Backpropagation visual explanations for CNNs. |
 | `cka` | `from cka import linear_cka, kernel_cka, CKA, plot_cka_matrix` | Centered Kernel Alignment (CKA) representation similarity for layers & architectures. |
 | `attention_rollout` | `from attention_rollout import compute_attention_rollout, AttentionRollout` | Attention Rollout (Abir et al., 2020) for tracking information flow in Vision Transformers. |
+| `flowprune` | `from flowprune import compute_flowprune, FlowPrune` | FlowPrune (Xu et al., NeurIPS 2025) accelerated attention flow via max-flow min-cut network pruning. |
 
 

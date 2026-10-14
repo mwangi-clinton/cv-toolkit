@@ -28,6 +28,7 @@ dependencies = [
     "opencv-python>=4.5.0",
     "Pillow>=8.0.0",
     "matplotlib>=3.5.0",
+    "networkx>=2.6.0",
 ]
 
 [project.urls]
@@ -38,6 +39,7 @@ packages = [
     { include = "gradcam" },
     { include = "cka" },
     { include = "attention_rollout" },
+    { include = "flowprune" },
 ]
 
 [tool.poetry.group.dev.dependencies]
