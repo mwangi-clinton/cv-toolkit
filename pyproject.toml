@@ -40,6 +40,7 @@ packages = [
     { include = "cka" },
     { include = "attention_rollout" },
     { include = "flowprune" },
+    { include = "data_loading" },
 ]
 
 [tool.poetry.group.dev.dependencies]
